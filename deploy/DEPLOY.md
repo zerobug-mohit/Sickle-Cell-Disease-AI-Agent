@@ -58,8 +58,9 @@ if [ ! -f /swapfile ]; then
 fi
 free -h   # confirm swap is active
 
-# Dedicated service user + app dir
-sudo useradd --system --create-home --home-dir /opt/scd-bot scdbot || true
+# Dedicated service user (do NOT pre-create the home dir — git clone needs it empty)
+sudo useradd --system --home-dir /opt/scd-bot --shell /usr/sbin/nologin scdbot 2>/dev/null || true
+sudo rm -rf /opt/scd-bot
 sudo git clone https://github.com/zerobug-mohit/Sickle-Cell-Disease-AI-Agent.git /opt/scd-bot
 sudo chown -R scdbot:scdbot /opt/scd-bot
 ```
