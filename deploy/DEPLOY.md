@@ -16,7 +16,8 @@ In the Google Cloud Console → **Compute Engine → VM instances → Create ins
 
 - **Name:** `scd-bot`
 - **Region/Zone:** closest to your users (e.g. `asia-south1` for India)
-- **Machine type:** `e2-small` (2 vCPU, 2 GB) is enough; `e2-medium` (4 GB) for headroom
+- **Machine type:** `e2-micro` (2 vCPU shared, 1 GB) for lowest cost — we add a 2 GB swap
+  file (Phase 4) to cover the tight RAM. Step up to `e2-small` (2 GB) if you see memory pressure.
 - **Boot disk:** Ubuntu **24.04 LTS**, 20 GB standard
 - **Firewall:** check **Allow HTTP traffic** and **Allow HTTPS traffic**
 - Create.
@@ -46,6 +47,16 @@ includes the prebuilt FAISS index, so there is nothing else to upload.
 ```bash
 sudo apt update
 sudo apt install -y git python3-venv python3-pip
+
+# 1 GB VM (e2-micro): add 2 GB swap as an OOM safety net
+if [ ! -f /swapfile ]; then
+  sudo fallocate -l 2G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
+free -h   # confirm swap is active
 
 # Dedicated service user + app dir
 sudo useradd --system --create-home --home-dir /opt/scd-bot scdbot || true
@@ -89,8 +100,8 @@ Then the venv + dependencies (no Tesseract needed — we are not ingesting on th
 sudo -u scdbot bash -c '
   cd /opt/scd-bot
   python3 -m venv .venv
-  .venv/bin/pip install --upgrade pip
-  .venv/bin/pip install -r requirements.txt
+  .venv/bin/pip install --no-cache-dir --upgrade pip
+  .venv/bin/pip install --no-cache-dir -r requirements.txt
 '
 
 # Sanity check: index loads
@@ -172,6 +183,10 @@ You should see `msg from=...` then a `graph.facebook.com/.../messages 200 OK`.
 ---
 
 ## Notes
+- **Memory (e2-micro / 1 GB):** the 2 GB swap (Phase 4) covers spikes. Check usage with
+  `free -h` and `systemctl status scd-bot`. If the service is OOM-killed (look for `Killed`
+  in `journalctl -u scd-bot`), resize the VM to `e2-small`:
+  `gcloud compute instances set-machine-type scd-bot --machine-type=e2-small --zone=ZONE` (VM stopped).
 - After this, you can stop the local laptop server + ngrok — the VM is the live host.
 - The DuckDNS IP must stay pointed at the VM's static IP (it won't change since it's reserved).
 - To update code later: rebuild the bundle, re-upload, `sudo tar -xzf ... -C /opt/scd-bot`, `sudo systemctl restart scd-bot`.
