@@ -38,38 +38,54 @@ Then reserve a **static IP** so it never changes:
 
 ---
 
-## Phase 3 — Upload the app bundle
+## Phase 3 — Get the code onto the VM (git clone)
 
-From your **laptop** (the bundle `scd-bot-deploy.tar.gz` was generated in the project root;
-it contains `app/`, `requirements.txt`, `data/faiss_index/`, `deploy/`, and `.env`):
-
-Using GCP in-browser SSH: click **Upload file** (gear menu) and upload `scd-bot-deploy.tar.gz`.
-
-Or with gcloud CLI:
-```bash
-gcloud compute scp scd-bot-deploy.tar.gz scd-bot:~ --zone=YOUR_ZONE
-```
-
----
-
-## Phase 4 — Set up the app on the VM
-
-SSH into the VM, then:
+SSH into the VM, then clone the public repo into `/opt/scd-bot`. The repo already
+includes the prebuilt FAISS index, so there is nothing else to upload.
 
 ```bash
-# System deps (no Tesseract needed — we are not ingesting on the VM)
 sudo apt update
-sudo apt install -y python3-venv python3-pip
+sudo apt install -y git python3-venv python3-pip
 
 # Dedicated service user + app dir
 sudo useradd --system --create-home --home-dir /opt/scd-bot scdbot || true
-sudo mkdir -p /opt/scd-bot
-
-# Unpack the bundle into /opt/scd-bot
-sudo tar -xzf ~/scd-bot-deploy.tar.gz -C /opt/scd-bot
+sudo git clone https://github.com/zerobug-mohit/scd-whatsapp-chatbot.git /opt/scd-bot
 sudo chown -R scdbot:scdbot /opt/scd-bot
+```
 
-# Python venv + dependencies
+> Later updates are just: `cd /opt/scd-bot && sudo -u scdbot git pull && sudo systemctl restart scd-bot`
+
+---
+
+## Phase 4 — Create `.env` and install dependencies
+
+The `.env` is **not** in the repo (it holds secrets). Create it on the VM with your
+real values — copy them from your laptop's `.env`:
+
+```bash
+sudo -u scdbot tee /opt/scd-bot/.env >/dev/null <<'EOF'
+META_ACCESS_TOKEN=YOUR_PERMANENT_META_TOKEN
+META_PHONE_NUMBER_ID=YOUR_PHONE_NUMBER_ID
+META_VERIFY_TOKEN=YOUR_VERIFY_TOKEN
+META_APP_SECRET=YOUR_APP_SECRET
+WHATSAPP_API_VERSION=v22.0
+OPENAI_API_KEY=YOUR_OPENAI_KEY
+PORT=8000
+SESSION_BACKEND=memory
+REDIS_URL=redis://localhost:6379
+FAISS_INDEX_PATH=./data/faiss_index
+TRAINING_MATERIALS_DIR=./data/training_materials
+GOOGLE_CREDENTIALS_PATH=
+INTERACTION_SHEET_ID=
+EOF
+sudo chmod 600 /opt/scd-bot/.env
+```
+
+(Alternatively `scp` your laptop `.env` to the VM and move it into `/opt/scd-bot/`.)
+
+Then the venv + dependencies (no Tesseract needed — we are not ingesting on the VM):
+
+```bash
 sudo -u scdbot bash -c '
   cd /opt/scd-bot
   python3 -m venv .venv
@@ -78,15 +94,11 @@ sudo -u scdbot bash -c '
 '
 
 # Sanity check: index loads
-sudo -u scdbot /opt/scd-bot/.venv/bin/python -c "
+sudo -u scdbot bash -c 'cd /opt/scd-bot && .venv/bin/python -c "
 from app.rag.vector_store import VectorStore
-vs = VectorStore(); vs.load('/opt/scd-bot/data/faiss_index')
-print('index vectors:', vs._index.ntotal)
-"
+vs = VectorStore(); vs.load(\"data/faiss_index\")
+print(\"index vectors:\", vs._index.ntotal)"'
 ```
-
-The `.env` is already inside the bundle (set `SESSION_BACKEND=memory`; the permanent
-Meta token and OpenAI key are already filled in).
 
 ---
 
@@ -122,7 +134,7 @@ sudo systemctl status caddy --no-pager
 
 Caddy will fetch a Let's Encrypt cert within a few seconds. Verify from your laptop:
 ```bash
-curl -s "https://SUBDOMAIN/webhook?hub.mode=subscribe&hub.verify_token=scd_bot_wh_7Kq2mZ&hub.challenge=OK123"
+curl -s "https://SUBDOMAIN/webhook?hub.mode=subscribe&hub.verify_token=YOUR_VERIFY_TOKEN&hub.challenge=OK123"
 # -> should print: OK123
 ```
 
@@ -133,16 +145,16 @@ curl -s "https://SUBDOMAIN/webhook?hub.mode=subscribe&hub.verify_token=scd_bot_w
 The webhook callback currently points at the ngrok URL. Update it to the VM URL.
 (Ask the assistant to run this, or do it via the Meta dashboard:
 WhatsApp → Configuration → Webhook → Edit → Callback `https://SUBDOMAIN/webhook`,
-verify token `scd_bot_wh_7Kq2mZ`.)
+verify token `YOUR_VERIFY_TOKEN`.)
 
 API method (app access token = `APP_ID|APP_SECRET`):
 ```bash
-curl -X POST "https://graph.facebook.com/v22.0/989312020608269/subscriptions" \
+curl -X POST "https://graph.facebook.com/v22.0/YOUR_APP_ID/subscriptions" \
   --data-urlencode "object=whatsapp_business_account" \
   --data-urlencode "callback_url=https://SUBDOMAIN/webhook" \
-  --data-urlencode "verify_token=scd_bot_wh_7Kq2mZ" \
+  --data-urlencode "verify_token=YOUR_VERIFY_TOKEN" \
   --data-urlencode "fields=messages" \
-  --data-urlencode "access_token=989312020608269|YOUR_APP_SECRET"
+  --data-urlencode "access_token=YOUR_APP_ID|YOUR_APP_SECRET"
 ```
 
 The WABA→app subscription persists, so no need to redo it.
