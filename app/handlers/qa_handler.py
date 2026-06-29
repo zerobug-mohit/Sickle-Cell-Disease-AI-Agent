@@ -8,7 +8,7 @@ from openai import AsyncOpenAI
 
 from app import config
 from app.rag.vector_store import vector_store, SearchResult
-from app.rag.prompts import QA_SYSTEM_PROMPT, FALLBACK, SOURCE_TITLES, SOURCE_LABEL
+from app.rag.prompts import QA_SYSTEM_PROMPT, FALLBACK, SOURCE_TITLES, SOURCE_LABEL, FOLLOWUP_LABEL
 from app.utils.language import detect_language
 from app.session.store import save_session
 from app.utils.sheets_logger import log_interaction
@@ -97,6 +97,16 @@ def _clean_text(text: str) -> str:
     text = "\n".join(line.rstrip() for line in text.splitlines())
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def _format_followups(followups: list, lang: str) -> str:
+    """Render the follow-up suggestions with a bold heading + bullets (code-side,
+    like sources, so the heading is always bold and consistently formatted)."""
+    questions = [q.strip() for q in followups if isinstance(q, str) and q.strip()][:3]
+    if not questions:
+        return ""
+    heading = FOLLOWUP_LABEL.get(lang, FOLLOWUP_LABEL["en"])
+    return heading + "\n" + "\n".join(f"* {q}" for q in questions)
 
 
 def _format_sources(results: list[SearchResult], lang: str) -> str:
@@ -225,10 +235,13 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
     # (safer than dropping a real source).
     refused = False
     answer = raw
+    followups: list = []
     try:
         parsed = json.loads(raw)
         answer = parsed.get("answer") or raw
         refused = bool(parsed.get("refused", False))
+        fu = parsed.get("followups", [])
+        followups = fu if isinstance(fu, list) else []
     except (json.JSONDecodeError, AttributeError, TypeError):
         answer = raw
     answer = _clean_text(answer)
@@ -240,13 +253,19 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
     session["history"] = history[-(_HISTORY_TURNS * 2):]
     save_session(phone, session)
 
-    # Cite the documents whose chunks were actually passed to the model — but only
-    # when the bot genuinely answered from them (not a conversational decline).
+    # Compose the reply: answer, then follow-up suggestions, then source citation.
+    # Suggestions and sources are added only for genuine (non-refusal) answers, and
+    # both headings are rendered here in code so they are reliably bold.
     reply = answer
     if not refused:
+        parts = [answer]
+        followup_block = _format_followups(followups, lang)
+        if followup_block:
+            parts.append(followup_block)
         source_line = _format_sources(results[:_CONTEXT_CHUNKS], lang)
         if source_line:
-            reply = answer + "\n\n" + source_line
+            parts.append(source_line)
+        reply = "\n\n".join(parts)
 
     processing_ms = int((time.monotonic() - t0) * 1000)
     await log_interaction(phone, interaction_id, username, text, reply, lang, True, "", processing_ms)

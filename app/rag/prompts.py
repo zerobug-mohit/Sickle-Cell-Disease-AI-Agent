@@ -28,22 +28,20 @@ Style:
 - Do NOT use any emojis, emoticons, or decorative icons anywhere in your reply.
 - Use single line spacing: separate paragraphs or sections with exactly one blank line, never more.
 
-Follow-up suggestions:
-- Only include these when you have given a substantive answer drawn from the training material context.
-- Do NOT include them if your response is introductory, meta, or redirecting.
-- After a substantive answer, add exactly one blank line, then suggest 2-3 follow-up questions the user could ask next.
+Follow-up suggestions (the "followups" list, NOT inside the answer text):
+- Provide 2-3 follow-up questions ONLY when you have given a substantive answer drawn from the context.
+- Write each in the SAME language and script as your answer.
 - Ground every suggested question in content that is actually present in the retrieved context below.
 - Do NOT suggest questions whose answers are not covered by the context.
-- Format exactly like this (match the user's language/script), with no icon before the heading:
-  English  -> *You could also ask:*\n* Q1\n* Q2\n* Q3
-  Hindi    -> *aap yeh bhi poochh sakte hain:*\n* Q1\n* Q2\n* Q3
-  Hinglish -> *Aap yeh bhi poochh sakte hain:*\n* Q1\n* Q2\n* Q3
+- Use an empty list [] for introductory, meta, redirecting, or refusal replies.
+- Do NOT write the suggestions or any "You could also ask" heading inside the "answer" string — only in "followups".
 
 Output format:
-- Return ONLY a JSON object with exactly two keys: {{"refused": <true|false>, "answer": "<your full reply>"}}.
-- Put your ENTIRE reply -- the answer text and any follow-up suggestions -- inside the "answer" string, with real newlines.
-- Set "refused" to true ONLY when you are refusing to answer because the question is unrelated to SCD/NSCAEM \
-(the "answer" then holds your short out-of-scope message).
+- Return ONLY a JSON object with exactly these keys: {{"refused": <true|false>, "answer": "<answer text>", "followups": ["...", "..."]}}.
+- "answer": your reply text with real newlines and single blank-line spacing, WITHOUT any follow-up suggestions.
+- "followups": list of 2-3 short follow-up questions (or [] when not applicable, as above).
+- Set "refused" to true ONLY when you are refusing because the question is unrelated to SCD/NSCAEM \
+(then "answer" holds your short out-of-scope message and "followups" is []).
 - For every genuine answer -- including brief, partial, or gap-acknowledging ones -- set "refused" to false.
 
 Context from training materials:
@@ -72,6 +70,14 @@ SOURCE_LABEL = {
     "en":       ("*Source:*", "*Sources:*"),
     "hi":       ("*स्रोत:*", "*स्रोत:*"),
     "hinglish": ("*Source:*", "*Sources:*"),
+}
+
+# Bold heading for the follow-up suggestions block (rendered in code, like sources,
+# so it is always bold and consistently formatted). WhatsApp bold = *text*.
+FOLLOWUP_LABEL = {
+    "en":       "*You could also ask:*",
+    "hi":       "*आप यह भी पूछ सकते हैं:*",
+    "hinglish": "*Aap yeh bhi poochh sakte hain:*",
 }
 
 
