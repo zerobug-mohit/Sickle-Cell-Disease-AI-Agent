@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets — NEVER commit
+.env
+credentials/
+
+# Large source PDFs — kept local, not in git
+Context data/
+data/training_materials/
+
+# Deploy bundle (contains secrets)
+scd-bot-deploy.tar.gz
+
+# Logs / OS cruft
+*.log
+.DS_Store
+Thumbs.db
+
+# NOTE: data/faiss_index/ IS intentionally committed — it is the small (~2.4 MB)
+# prebuilt vector index, so the repo can be deployed without re-ingesting PDFs.
