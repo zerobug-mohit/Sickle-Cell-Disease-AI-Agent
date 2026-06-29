@@ -49,7 +49,7 @@ sudo apt install -y git python3-venv python3-pip
 
 # Dedicated service user + app dir
 sudo useradd --system --create-home --home-dir /opt/scd-bot scdbot || true
-sudo git clone https://github.com/zerobug-mohit/scd-whatsapp-chatbot.git /opt/scd-bot
+sudo git clone https://github.com/zerobug-mohit/Sickle-Cell-Disease-AI-Agent.git /opt/scd-bot
 sudo chown -R scdbot:scdbot /opt/scd-bot
 ```
 
