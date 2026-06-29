@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 import uuid
 
@@ -85,6 +86,17 @@ async def _classify_scope(text: str, history: list[dict]) -> bool:
     except Exception:
         # On any failure, prefer to answer rather than wrongly block a real question.
         return True
+
+
+def _clean_text(text: str) -> str:
+    """Normalize whitespace so replies use single line spacing.
+
+    Strips trailing spaces per line and collapses any run of blank lines into a
+    single blank line, so stray model whitespace never reaches the user.
+    """
+    text = "\n".join(line.rstrip() for line in text.splitlines())
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _format_sources(results: list[SearchResult], lang: str) -> str:
@@ -215,10 +227,11 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
     answer = raw
     try:
         parsed = json.loads(raw)
-        answer = (parsed.get("answer") or raw).strip()
+        answer = parsed.get("answer") or raw
         refused = bool(parsed.get("refused", False))
     except (json.JSONDecodeError, AttributeError, TypeError):
-        answer = raw.strip()
+        answer = raw
+    answer = _clean_text(answer)
 
     # History keeps the clean answer (no source line) so the model does not learn
     # to echo citations itself — sources are appended deterministically below.
