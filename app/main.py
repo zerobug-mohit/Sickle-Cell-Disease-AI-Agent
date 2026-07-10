@@ -78,6 +78,9 @@ async def receive_webhook(request: Request) -> Response:
         value = changes[0].get("value", {})
 
         if "statuses" in value and "messages" not in value:
+            st = value["statuses"][0]
+            logger.info("status=%s recipient=%s errors=%s",
+                        st.get("status"), st.get("recipient_id"), st.get("errors"))
             return Response(status_code=200)
 
         messages = value.get("messages", [])

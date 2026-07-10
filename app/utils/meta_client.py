@@ -42,3 +42,5 @@ async def send_message(to: str, body: str) -> None:
             )
             if resp.status_code != 200:
                 logger.error("Meta API %s: %s", resp.status_code, resp.text)
+            else:
+                logger.info("Meta send ok to=%s resp=%s", to, resp.text[:300])
