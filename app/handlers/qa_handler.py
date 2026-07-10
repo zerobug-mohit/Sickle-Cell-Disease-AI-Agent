@@ -25,6 +25,25 @@ _HISTORY_TURNS = 3  # full turns (user + assistant pairs) kept in session
 _CADRE_BONUS = 0.06          # chunk tagged with the user's cadre
 _OTHER_CADRE_PENALTY = 0.03  # chunk specific to a different cadre (not "all")
 
+# Explicit language directive handed to the answer model. We decide the language
+# ourselves (script-based detection is reliable) instead of letting the model guess,
+# which prevents surprises like a Hinglish question answered in Devanagari.
+_LANG_DIRECTIVE = {
+    "en": "English.",
+    "hi": "Hindi, written in Devanagari script (do NOT use Roman/Latin letters for Hindi words).",
+    "hinglish": "Hinglish -- Hindi written in Roman/Latin (English) script (do NOT use Devanagari).",
+}
+
+
+def _resolve_lang(text: str, prev: str) -> str:
+    """Decide the reply language deterministically, with continuity: a Roman-script
+    message with no Hindi markers keeps an already-established Hinglish conversation
+    rather than flipping to English on its own."""
+    detected = detect_language(text)
+    if detected in ("hi", "hinglish"):
+        return detected
+    return "hinglish" if prev == "hinglish" else "en"
+
 _MULTI_QUERY_PROMPT = """\
 Generate 3 diverse search queries to find relevant sections in training documents about \
 Sickle Cell Disease (SCD) for India's National Sickle Cell Anaemia Elimination Mission (NSCAEM).
@@ -221,7 +240,9 @@ def _cadre_block(session: dict) -> str:
 async def handle_qa(phone: str, text: str, session: dict, username: str = "") -> str:
     t0 = time.monotonic()
     interaction_id = uuid.uuid4().hex[:8]
-    lang = detect_language(text)
+    # One language governs the whole reply — answer, follow-ups, source label, and
+    # the footer added by the router — chosen deterministically with continuity.
+    lang = _resolve_lang(text, session.get("lang", ""))
     session["lang"] = lang
     error_msg = ""
 
@@ -239,6 +260,7 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
     )
 
     if not in_scope_pre:
+        session["lang"] = lang
         save_session(phone, session)
         reply = FALLBACK.get(lang, FALLBACK["en"])
         processing_ms = int((time.monotonic() - t0) * 1000)
@@ -248,6 +270,7 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
     results = await _multi_query_search(queries, cadre)
 
     if not results or results[0].score < _SIMILARITY_THRESHOLD:
+        session["lang"] = lang
         save_session(phone, session)
         reply = FALLBACK.get(lang, FALLBACK["en"])
         processing_ms = int((time.monotonic() - t0) * 1000)
@@ -256,6 +279,7 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
 
     context = "\n\n---\n\n".join(r.text for r in results[:_CONTEXT_CHUNKS])
     system_prompt = QA_SYSTEM_PROMPT.format(
+        language_directive=_LANG_DIRECTIVE.get(lang, _LANG_DIRECTIVE["en"]),
         profile_block=_profile_block(session),
         retrieved_chunks=context,
     )
@@ -264,6 +288,10 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
         {"role": "system", "content": system_prompt},
         *history[-(_HISTORY_TURNS * 2):],
         {"role": "user", "content": text},
+        # Trailing reminder (recency) so the model doesn't drift to the history's script.
+        {"role": "system", "content":
+            f"Write the entire JSON reply — both \"answer\" and every item in \"followups\" — "
+            f"strictly in {_LANG_DIRECTIVE.get(lang, _LANG_DIRECTIVE['en'])}"},
     ]
 
     response = await _client.chat.completions.create(

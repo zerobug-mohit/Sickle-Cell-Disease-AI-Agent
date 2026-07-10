@@ -25,11 +25,11 @@ worker duties (e.g. cooking, politics, sports). In that case say clearly that th
 Style:
 - Keep answers short -- maximum 3 short paragraphs or a brief bullet list.
 - Use simple, encouraging language. These are field health workers, not specialists.
-- Detect the language of the user's question and reply in the SAME language and script:
-    * Hindi (Devanagari script) -> reply in Hindi Devanagari
-    * Hinglish (Roman script Hindi) -> reply in Hinglish Roman script
-    * English -> reply in English
-- Do NOT mix scripts in a single reply.
+- Write your ENTIRE reply in this language ONLY: {language_directive}
+- This applies to the answer text AND every follow-up question -- all of it in that one language and script. \
+Never mix languages or scripts within a single reply, and never use any language other than the one specified here.
+- Write this reply entirely in that language EVEN IF earlier messages in the conversation used a different \
+language or script. The language above is decided from the user's latest message and overrides the history.
 - Do NOT use any emojis, emoticons, or decorative icons anywhere in your reply.
 - Use single line spacing: separate paragraphs or sections with exactly one blank line, never more.
 
@@ -180,14 +180,14 @@ FALLBACK = {
         "Please ask a question on one of these topics."
     ),
     "hi": (
-        "yeh prashn SCD prasikshan samagri ke dayre se bahar hai.\n\n"
-        "main keval in vishyon par uttar de sakta hoon:\n"
-        "* Sickle Cell Disease -- mool baaten aur aanuvamshikta\n"
-        "* Lakshan, jatiltaen aur referral\n"
-        "* Nidan aur samudayik screening\n"
-        "* Upchar aur rogi prabandhan\n"
-        "* Paramarsh aur NSCAEM disha-nirdesh\n\n"
-        "Kripya inhi vishyon se sambandhit prashn poochhen."
+        "यह प्रश्न SCD प्रशिक्षण सामग्री के दायरे से बाहर है।\n\n"
+        "मैं केवल इन विषयों पर उत्तर दे सकता हूँ:\n"
+        "* सिकल सेल रोग -- मूल बातें, आनुवंशिकी और वंशानुक्रम\n"
+        "* लक्षण, जटिलताएँ और कब रेफर करें\n"
+        "* निदान और सामुदायिक स्क्रीनिंग\n"
+        "* उपचार और रोगी प्रबंधन\n"
+        "* परामर्श, NSCAEM दिशा-निर्देश और सामुदायिक आउटरीच\n\n"
+        "कृपया इन्हीं विषयों से संबंधित प्रश्न पूछें।"
     ),
     "hinglish": (
         "Yeh sawaal SCD training modules ke bahar ka hai.\n\n"
@@ -203,19 +203,19 @@ FALLBACK = {
 
 GOODBYE = {
     "en":       "Goodbye! Thank you for your commitment to fighting Sickle Cell Disease.\n\nNSCAEM -- National Sickle Cell Anaemia Elimination Mission",
-    "hi":       "Alvida! Sickle Cell Disease se ladne ki aapki pratibaddhat ke liye dhanyavaad.\n\nNSCAEM -- Rashtriya Sickle Cell Anaemia Unmulan Mission",
+    "hi":       "अलविदा! सिकल सेल रोग से लड़ने की आपकी प्रतिबद्धता के लिए धन्यवाद।\n\nNSCAEM -- राष्ट्रीय सिकल सेल एनीमिया उन्मूलन मिशन",
     "hinglish": "Alvida! Sickle Cell Disease se ladne ki aapki commitment ke liye shukriya.\n\nNSCAEM -- National Sickle Cell Anaemia Elimination Mission",
 }
 
 EXIT_FOOTER = {
     "en":       "Type /help to return to the main menu anytime.",
-    "hi":       "Kabhi bhi mukhya menu par wapas jaane ke liye /help likhein.",
+    "hi":       "किसी भी समय मुख्य मेनू पर लौटने के लिए /help लिखें।",
     "hinglish": "Kabhi bhi main menu par jaane ke liye /help likhein.",
 }
 
 GREETING_PREFIX = {
     "en":       "Hello! Welcome to the SCD Health Worker Training Bot.\n\nHere is what you can ask about:",
-    "hi":       "Namaste! SCD Health Worker Training Bot mein aapka swagat hai.\n\nAap in vishyon par prashn poochh sakte hain:",
+    "hi":       "नमस्ते! SCD हेल्थ वर्कर ट्रेनिंग बॉट में आपका स्वागत है।\n\nआप इन विषयों पर प्रश्न पूछ सकते हैं:",
     "hinglish": "Namaste! SCD Health Worker Training Bot mein aapka swagat hai.\n\nAap in topics par sawaal poochh sakte hain:",
 }
 
@@ -267,50 +267,50 @@ Type /stop to end this session.
 For support, contact: mchaurasiya@wjcf.in""",
 
     "hi": """\
-SCD Health Worker Training Bot
-Rashtriya Sickle Cell Anaemia Unmulan Mission (NSCAEM)
+SCD हेल्थ वर्कर ट्रेनिंग बॉट
+राष्ट्रीय सिकल सेल एनीमिया उन्मूलन मिशन (NSCAEM)
 
-Sickle Cell Disease ke baare mein koi bhi prashn poochhen:
+सिकल सेल रोग के बारे में कोई भी प्रश्न पूछें:
 
 ---
-Rog ki mool baaten aur aanuvamshikta
-* Sickle cell disease kya hai aur yeh kaise phailta hai?
-* HbSS aur HbAS mein kya antar hai?
-* Kya do vahak (HbAS) ke bacche ko SCD ho sakti hai?
-* Vahak aur marij mein kya fark hota hai?
-* Lal rakt koshika hansia ke aakaar ki kyun ho jaati hai?
+रोग की मूल बातें और आनुवंशिकी
+* सिकल सेल रोग क्या है और यह कैसे फैलता है?
+* HbSS और HbAS में क्या अंतर है?
+* क्या दो वाहक (HbAS) के बच्चे को SCD हो सकती है?
+* वाहक और रोगी में क्या फर्क होता है?
+* लाल रक्त कोशिका हँसिया के आकार की क्यों हो जाती है?
 
-Lakshan aur Jatiltaen
-* Sickle cell crisis ke kya sanket hain?
-* Acute Chest Syndrome kya hai aur ise kaise pehchaanen?
-* SCD mareezon ko sankraman adhik kyun hota hai?
-* SCD wale bacche mein kaun si jatiltaon par dhyan den?
-* SCD mareej ko kab turant refer karna chahiye?
+लक्षण और जटिलताएँ
+* सिकल सेल क्राइसिस के क्या संकेत हैं?
+* एक्यूट चेस्ट सिंड्रोम क्या है और इसे कैसे पहचानें?
+* SCD मरीजों को संक्रमण अधिक क्यों होता है?
+* SCD वाले बच्चे में किन जटिलताओं पर ध्यान दें?
+* SCD मरीज को कब तुरंत रेफर करना चाहिए?
 
-Nidan aur Screening
-* SCD ka nidan kaise hota hai?
-* HPLC kya hai aur kab upyog hota hai?
-* Point-of-care (Sickle SCAN) test kya batata hai?
-* Navjat shishu ki SCD screening kab honi chahiye?
-* NSCAEM ke tahat samudayik screening kaise hoti hai?
+निदान और स्क्रीनिंग
+* SCD का निदान कैसे होता है?
+* HPLC क्या है और कब उपयोग होता है?
+* पॉइंट-ऑफ-केयर (Sickle SCAN) टेस्ट क्या बताता है?
+* नवजात शिशु की SCD स्क्रीनिंग कब होनी चाहिए?
+* NSCAEM के तहत सामुदायिक स्क्रीनिंग कैसे होती है?
 
-Upchar aur Prabandhan
-* Hydroxyurea kya hai aur kise leni chahiye?
-* SCD mareezon ko roz Folic Acid kyun chahiye?
-* Samudaay star par dard ka sankat kaise sambhaalen?
-* SCD mareezon ke liye kaun se tike zaroori hain?
-* Mareej ko uchch aspatal kab bhejen?
+उपचार और प्रबंधन
+* हाइड्रोक्सीयूरिया क्या है और किसे लेनी चाहिए?
+* SCD मरीजों को रोज़ फोलिक एसिड क्यों चाहिए?
+* समुदाय स्तर पर दर्द का संकट कैसे संभालें?
+* SCD मरीजों के लिए कौन से टीके ज़रूरी हैं?
+* मरीज को उच्च अस्पताल कब भेजें?
 
-Paramarsh aur Samudaay
-* Shaadi se pehle jode ko SCD jokhim ke baare mein kaise samjayen?
-* Naye SCD nidan ko parivar ko kaise batayen?
-* Samudaay star par SCD screening mein meri kya bhumika hai?
-* Apne kshetr mein SCD mareezon ko kaise track karen?
+परामर्श और समुदाय
+* शादी से पहले जोड़े को SCD जोखिम के बारे में कैसे समझाएँ?
+* नए SCD निदान को परिवार को कैसे बताएँ?
+* समुदाय स्तर पर SCD स्क्रीनिंग में मेरी क्या भूमिका है?
+* अपने क्षेत्र में SCD मरीजों को कैसे ट्रैक करें?
 ---
 
-Wapas aane ke liye kabhi bhi /help likhein
-Session khatam karne ke liye /stop likhein.
-Sahayata ke liye: mchaurasiya@wjcf.in""",
+यहाँ वापस आने के लिए कभी भी /help लिखें
+इस सत्र को समाप्त करने के लिए /stop लिखें।
+सहायता के लिए संपर्क करें: mchaurasiya@wjcf.in""",
 
     "hinglish": """\
 SCD Health Worker Training Bot
