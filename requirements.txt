@@ -6,6 +6,7 @@ faiss-cpu
 numpy
 pypdf
 python-docx
+python-pptx
 pytesseract
 PyMuPDF
 Pillow

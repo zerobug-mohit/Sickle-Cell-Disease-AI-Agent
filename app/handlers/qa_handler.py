@@ -16,9 +16,14 @@ from app.utils.sheets_logger import log_interaction
 _client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
 _SIMILARITY_THRESHOLD = 0.10
-_TOP_K = 5          # results per query from FAISS
-_CONTEXT_CHUNKS = 3 # top chunks passed to the answer model
+_TOP_K = 8          # results per query from FAISS (wider pool for cadre re-ranking)
+_CONTEXT_CHUNKS = 4 # top chunks passed to the answer model
 _HISTORY_TURNS = 3  # full turns (user + assistant pairs) kept in session
+
+# Cadre-aware re-ranking: a mild nudge, not a hard filter — clinical facts in
+# another cadre's manual can still surface if strongly relevant.
+_CADRE_BONUS = 0.06          # chunk tagged with the user's cadre
+_OTHER_CADRE_PENALTY = 0.03  # chunk specific to a different cadre (not "all")
 
 _MULTI_QUERY_PROMPT = """\
 Generate 3 diverse search queries to find relevant sections in training documents about \
@@ -39,7 +44,7 @@ POC -> "point-of-care test", SCA -> "sickle cell anaemia"
 - Use formal training-document vocabulary
 - If the current question uses pronouns or references ("it", "that disease", "the same test", \
 "ye bimari", "woh condition") resolve them using the conversation history before forming queries
-{history_block}
+{cadre_block}{history_block}
 Return JSON only: {{"queries": ["...", "...", "..."]}}
 
 Current question: {query}"""
@@ -137,9 +142,10 @@ def _history_block(history: list[dict]) -> str:
     return "\nConversation so far:\n" + "\n".join(lines) + "\n"
 
 
-async def _generate_search_queries(text: str, history: list[dict]) -> list[str]:
+async def _generate_search_queries(text: str, history: list[dict], cadre_block: str = "") -> list[str]:
     prompt = _MULTI_QUERY_PROMPT.format(
         query=text,
+        cadre_block=cadre_block,
         history_block=_history_block(history),
     )
     resp = await _client.chat.completions.create(
@@ -157,7 +163,17 @@ async def _generate_search_queries(text: str, history: list[dict]) -> list[str]:
         return [text]
 
 
-async def _multi_query_search(queries: list[str]) -> list[SearchResult]:
+def _cadre_score(result: SearchResult, cadre: str) -> float:
+    """Similarity score adjusted by how well the chunk matches the user's cadre."""
+    cadres = result.cadres or ["all"]
+    if cadre and cadre in cadres:
+        return result.score + _CADRE_BONUS
+    if "all" in cadres:
+        return result.score
+    return result.score - _OTHER_CADRE_PENALTY
+
+
+async def _multi_query_search(queries: list[str], cadre: str = "") -> list[SearchResult]:
     embed_resp = await _client.embeddings.create(
         model="text-embedding-3-small",
         input=queries,
@@ -172,8 +188,34 @@ async def _multi_query_search(queries: list[str]) -> list[SearchResult]:
                 seen.add(result.chunk_id)
                 combined.append(result)
 
-    combined.sort(key=lambda r: r.score, reverse=True)
+    # Rank by cadre-adjusted score so the user's cadre content is prioritised,
+    # while general ("all") content stays available and clinical facts can surface.
+    combined.sort(key=lambda r: _cadre_score(r, cadre), reverse=True)
     return combined
+
+
+def _profile_block(session: dict) -> str:
+    cadre = session.get("cadre_name") or session.get("cadre")
+    if not cadre:
+        return ""
+    facility = session.get("facility", "")
+    loc = ", ".join(x for x in [session.get("district", ""), session.get("state", "")] if x)
+    line = f"User profile: The user is a {cadre}"
+    if facility:
+        line += f" working at {facility}"
+    if loc:
+        line += f" in {loc}"
+    return line + ".\n"
+
+
+def _cadre_block(session: dict) -> str:
+    cadre = session.get("cadre_name") or session.get("cadre")
+    if not cadre:
+        return ""
+    return (
+        f"- The user asking is a {cadre}. Include at least one query about this cadre's "
+        f"specific roles and responsibilities for the topic.\n"
+    )
 
 
 async def handle_qa(phone: str, text: str, session: dict, username: str = "") -> str:
@@ -185,6 +227,7 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
 
     history: list[dict] = session.get("history", [])
     recent_history = history[-(_HISTORY_TURNS * 2):]
+    cadre = session.get("cadre", "")
 
     # Independent scope gate runs concurrently with query expansion so the common
     # (in-scope) path pays no extra latency. This is the authoritative off-topic
@@ -192,7 +235,7 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
     # an unrelated question into SCD-shaped search queries.
     in_scope_pre, queries = await asyncio.gather(
         _classify_scope(text, recent_history),
-        _generate_search_queries(text, recent_history),
+        _generate_search_queries(text, recent_history, _cadre_block(session)),
     )
 
     if not in_scope_pre:
@@ -202,7 +245,7 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
         await log_interaction(phone, interaction_id, username, text, reply, lang, False, "out_of_scope", processing_ms)
         return reply
 
-    results = await _multi_query_search(queries)
+    results = await _multi_query_search(queries, cadre)
 
     if not results or results[0].score < _SIMILARITY_THRESHOLD:
         save_session(phone, session)
@@ -212,7 +255,10 @@ async def handle_qa(phone: str, text: str, session: dict, username: str = "") ->
         return reply
 
     context = "\n\n---\n\n".join(r.text for r in results[:_CONTEXT_CHUNKS])
-    system_prompt = QA_SYSTEM_PROMPT.format(retrieved_chunks=context)
+    system_prompt = QA_SYSTEM_PROMPT.format(
+        profile_block=_profile_block(session),
+        retrieved_chunks=context,
+    )
 
     messages = [
         {"role": "system", "content": system_prompt},

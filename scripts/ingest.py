@@ -8,6 +8,7 @@ Usage:
 """
 import json
 import os
+import re
 import sys
 
 import faiss
@@ -136,22 +137,121 @@ def extract_docx(path: str) -> str:
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
-def load_documents(directory: str) -> list[tuple[str, str]]:
-    docs = []
+# --- Cadre tagging -------------------------------------------------------------
+# Canonical cadre codes: ASHA, ANM, MPW, CHO, SN, LT, MO, COUNSELLOR, plus "all".
+# File-level mapping for the manuals; the roles PPTX is tagged per slide below.
+SOURCE_CADRES = {
+    "GoI_CHO SCD Training Manual (English).pdf": ["CHO"],
+    "GoI_MO SCD Training Manual (English).pdf": ["MO"],
+    "GoI_MPW and Asha SCD Training Manual (English).pdf": ["MPW", "ASHA"],
+    "GoI_Staff Nurse SCD Training Manual (English).pdf": ["SN"],
+    "GoI_Counseling Module (English).pdf": ["COUNSELLOR", "all"],
+    "GoI_NSCAEM Operational Guidelines.pdf": ["all"],
+}
+
+_CADRE_KEYWORDS = [
+    ("ASHA", ["accredited social health", "asha"]),
+    ("ANM", ["auxiliary nurse", "anm"]),
+    ("MPW", ["multi-purpose", "multipurpose", "mpw"]),
+    ("CHO", ["community health officer", "cho"]),
+    ("SN", ["staff nurse"]),
+    ("LT", ["laboratory technician", "lab technician"]),
+    ("MO", ["medical officer"]),
+    ("COUNSELLOR", ["counsellor", "counselor"]),
+]
+
+
+def _detect_cadres(text: str) -> list[str]:
+    t = (text or "").lower()
+    hits = [code for code, kws in _CADRE_KEYWORDS if any(k in t for k in kws)]
+    # A slide naming many cadres (e.g. the cross-cadre reference chart) is general.
+    if len(hits) >= 3 or not hits:
+        return ["all"]
+    return hits
+
+
+_DIAGRAM_DATA_RELTYPE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData"
+)
+
+
+def _slide_smartart_text(slide) -> str:
+    """Extract SmartArt text from a slide — python-pptx can't read diagrams as
+    normal shapes; the text lives in the related diagram data part (dataN.xml)."""
+    runs: list[str] = []
+    for rel in slide.part.rels.values():
+        if rel.reltype == _DIAGRAM_DATA_RELTYPE:
+            xml = rel.target_part.blob.decode("utf-8", "ignore")
+            for t in re.findall(r"<a:t>(.*?)</a:t>", xml, re.S):
+                s = t.strip()
+                if s:
+                    runs.append(s)
+    return " ".join(runs)
+
+
+def extract_pptx_segments(path: str, source: str) -> list[dict]:
+    """One segment per slide: title + tables + SmartArt text, tagged by cadre."""
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    def walk(shapes, out):
+        for shape in shapes:
+            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                walk(shape.shapes, out)
+            elif shape.has_table:
+                for row in shape.table.rows:
+                    cells = [c.text.strip().replace("\n", " ") for c in row.cells]
+                    line = " | ".join(cells).strip(" |")
+                    if line:
+                        out.append(line)
+            elif shape.has_text_frame and shape.text_frame.text.strip():
+                out.append(shape.text_frame.text.strip())
+
+    prs = Presentation(path)
+    segments: list[dict] = []
+    for slide in prs.slides:
+        label_parts: list[str] = []
+        walk(slide.shapes, label_parts)  # titles, labels, tables
+        smart = _slide_smartart_text(slide)
+        # Detect the cadre from the slide's title/labels only — the SmartArt body
+        # often mentions other cadres in passing and would blur the tag.
+        cadres = _detect_cadres("\n".join(label_parts))
+        parts = list(label_parts)
+        if smart:
+            parts.append(smart)
+        text = "\n".join(parts).strip()
+        if len(text) < 15:
+            continue  # skip near-empty divider/section slides
+        segments.append({"source": source, "text": text, "cadres": cadres})
+    return segments
+
+
+def load_segments(directory: str) -> list[dict]:
+    """Return segments {source, text, cadres}. PDF/DOCX -> one file-level segment;
+    PPTX -> one segment per slide with slide-level cadre tagging."""
+    segments: list[dict] = []
     for fname in sorted(os.listdir(directory)):
         fpath = os.path.join(directory, fname)
         if not os.path.isfile(fpath):
             continue
-        if fname.lower().endswith(".pdf"):
+        low = fname.lower()
+        if low.endswith(".pdf"):
             print(f"  Reading PDF: {fname}")
-            docs.append((fname, extract_pdf(fpath)))
-        elif fname.lower().endswith(".docx"):
+            segments.append({"source": fname, "text": extract_pdf(fpath),
+                             "cadres": SOURCE_CADRES.get(fname, ["all"])})
+        elif low.endswith(".docx"):
             print(f"  Reading DOCX: {fname}")
-            docs.append((fname, extract_docx(fpath)))
-    return docs
+            segments.append({"source": fname, "text": extract_docx(fpath),
+                             "cadres": SOURCE_CADRES.get(fname, ["all"])})
+        elif low.endswith(".pptx"):
+            print(f"  Reading PPTX: {fname}")
+            segs = extract_pptx_segments(fpath, fname)
+            print(f"    {len(segs)} slide segment(s) extracted")
+            segments.extend(segs)
+    return segments
 
 
-def chunk_documents(docs: list[tuple[str, str]]) -> tuple[list[str], list[dict]]:
+def chunk_segments(segments: list[dict]) -> tuple[list[str], list[dict]]:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
@@ -162,22 +262,27 @@ def chunk_documents(docs: list[tuple[str, str]]) -> tuple[list[str], list[dict]]
 
     all_texts: list[str] = []
     all_meta: list[dict] = []
+    per_source: dict[str, int] = {}
 
-    for source, text in docs:
+    for seg in segments:
+        source, text = seg["source"], seg["text"]
+        cadres = seg.get("cadres", ["all"])
         if not text.strip():
             print(f"  WARNING: {source} yielded no extractable text.")
-            print(f"  This PDF may be image-based (scanned). See CLAUDE.md for the pymupdf fallback.")
             continue
-        chunks = splitter.split_text(text)
-        print(f"  {source}: {len(chunks)} chunks")
-        for i, chunk in enumerate(chunks):
+        for chunk in splitter.split_text(text):
+            n = per_source.get(source, 0)
+            per_source[source] = n + 1
             all_texts.append(chunk)
             all_meta.append({
-                "chunk_id": f"{source}_{i}",
+                "chunk_id": f"{source}::{n}",
                 "text": chunk,
                 "source": source,
+                "cadres": cadres,
             })
 
+    for source, cnt in per_source.items():
+        print(f"  {source}: {cnt} chunks")
     return all_texts, all_meta
 
 
@@ -214,14 +319,15 @@ def build_and_save_index(embeddings: list[list[float]], metadata: list[dict]) ->
 
 def main() -> None:
     print(f"Loading documents from: {TRAINING_MATERIALS_DIR}")
-    docs = load_documents(TRAINING_MATERIALS_DIR)
-    if not docs:
-        print("No PDF or DOCX files found. Copy the PDFs to data/training_materials/ and re-run.")
+    segments = load_segments(TRAINING_MATERIALS_DIR)
+    if not segments:
+        print("No PDF/DOCX/PPTX files found. Copy the source files to data/training_materials/ and re-run.")
         sys.exit(1)
-    print(f"Loaded {len(docs)} document(s)\n")
+    sources = {s["source"] for s in segments}
+    print(f"Loaded {len(sources)} document(s), {len(segments)} segment(s)\n")
 
     print("Chunking documents...")
-    texts, metadata = chunk_documents(docs)
+    texts, metadata = chunk_segments(segments)
     if not texts:
         print("ERROR: All documents yielded zero text chunks.")
         print("The PDFs are likely scanned/image-based. Install pymupdf and use the fallback in CLAUDE.md.")
@@ -234,7 +340,7 @@ def main() -> None:
 
     print("Building FAISS index...")
     build_and_save_index(embeddings, metadata)
-    print(f"\nDone. {len(docs)} documents -> {len(texts)} chunks indexed.")
+    print(f"\nDone. {len(sources)} documents -> {len(texts)} chunks indexed.")
 
 
 if __name__ == "__main__":

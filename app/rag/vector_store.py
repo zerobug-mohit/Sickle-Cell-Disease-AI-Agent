@@ -12,6 +12,7 @@ class SearchResult:
     source: str
     chunk_id: str
     score: float
+    cadres: list = None  # cadre codes this chunk is relevant to (["all"] if general)
 
 
 class VectorStore:
@@ -42,6 +43,7 @@ class VectorStore:
                 source=meta["source"],
                 chunk_id=meta["chunk_id"],
                 score=float(score),
+                cadres=meta.get("cadres", ["all"]),
             ))
         return results
 

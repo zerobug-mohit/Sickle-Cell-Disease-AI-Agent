@@ -14,6 +14,11 @@ does not directly compare them.
 resolve them from the conversation history before answering.
 - The question has already been judged to be about Sickle Cell Disease. If the context only partially covers it, \
 give your best partial answer from the context and briefly acknowledge the gap -- do NOT refuse an SCD-related question.
+- Tailor the answer to the user's role using the user profile below: focus on what THIS cadre should do at their \
+facility level; when a task belongs to a different cadre or facility level, briefly say who is responsible and \
+where to refer. Keep all clinical facts (dosages, criteria, procedures) accurate regardless of cadre.
+- For questions about the programme structure, committees, reporting or coordination at State / District / Block \
+level, use the user's state and district to make the answer concrete.
 - Only decline if the topic is completely unrelated to Sickle Cell Disease, NSCAEM, or related health \
 worker duties (e.g. cooking, politics, sports). In that case say clearly that this bot covers SCD training topics only.
 
@@ -44,6 +49,7 @@ Output format:
 (then "answer" holds your short out-of-scope message and "followups" is []).
 - For every genuine answer -- including brief, partial, or gap-acknowledging ones -- set "refused" to false.
 
+{profile_block}
 Context from training materials:
 {retrieved_chunks}"""
 
@@ -63,6 +69,8 @@ SOURCE_TITLES = {
         "Guidelines for National Programme for Prevention & Management of Sickle Cell Disease (NSCAEM 2023)",
     "GoI_Staff Nurse SCD Training Manual (English).pdf":
         "Training Module for Staff Nurses (NSCAEM 2023)",
+    "Roles and Responsibilities of FLWs in SCD Management.pptx":
+        "Roles & Responsibilities of Frontline Workers in SCD Management (NSCAEM)",
 }
 
 # (singular_label, plural_label) per language — used only when a grounded answer cites sources.
@@ -79,6 +87,85 @@ FOLLOWUP_LABEL = {
     "hi":       "*आप यह भी पूछ सकते हैं:*",
     "hinglish": "*Aap yeh bhi poochh sakte hain:*",
 }
+
+
+# --- User profile / cadres -----------------------------------------------------
+# `code` matches the cadre tags written into the FAISS index by scripts/ingest.py.
+CADRES = [
+    {"code": "ASHA",       "name": "ASHA",                           "facility": "primary level (SHC/HWC), community", "aliases": ["asha"]},
+    {"code": "ANM",        "name": "ANM",                            "facility": "primary level (SHC/HWC)",            "aliases": ["anm", "auxiliary nurse"]},
+    {"code": "MPW",        "name": "Multi-Purpose Worker (MPW)",     "facility": "primary level (SHC/HWC)",            "aliases": ["mpw", "multi-purpose", "multipurpose"]},
+    {"code": "CHO",        "name": "Community Health Officer (CHO)", "facility": "primary level (SHC/HWC)",            "aliases": ["cho", "community health officer"]},
+    {"code": "SN",         "name": "Staff Nurse",                    "facility": "secondary level (PHC/CHC/CH)",       "aliases": ["staff nurse", "nurse"]},
+    {"code": "LT",         "name": "Laboratory Technician",          "facility": "secondary/tertiary lab",             "aliases": ["laboratory technician", "lab technician", "lab tech"]},
+    {"code": "MO",         "name": "Medical Officer (MO)",           "facility": "secondary level (PHC/CHC/CH)",       "aliases": ["medical officer", "doctor"]},
+    {"code": "COUNSELLOR", "name": "Counsellor",                     "facility": "counselling role",                   "aliases": ["counsellor", "counselor"]},
+]
+
+
+def cadre_menu() -> str:
+    return "\n".join(f"{i}. {c['name']}" for i, c in enumerate(CADRES, 1))
+
+
+def cadre_by_code(code: str) -> dict:
+    for c in CADRES:
+        if c["code"] == code:
+            return c
+    return {"code": code, "name": code, "facility": ""}
+
+
+def parse_cadre(text: str) -> dict | None:
+    """Resolve a user reply to a cadre: by menu number, exact code, alias, or name."""
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    if t.isdigit():
+        i = int(t)
+        return CADRES[i - 1] if 1 <= i <= len(CADRES) else None
+    for c in CADRES:
+        if t == c["code"].lower():
+            return c
+    for c in CADRES:
+        if c["name"].lower() in t or any(a in t for a in c["aliases"]):
+            return c
+    return None
+
+
+# Onboarding prompts (bilingual EN + Hinglish, since language isn't known yet).
+ONBOARD_ASK_STATE = (
+    "Welcome to the *SCD Health Worker Assistant* (NSCAEM).\n"
+    "To give you answers relevant to your role, I need a few quick details.\n\n"
+    "Which *state* do you work in?\n"
+    "(Aap kis rajya mein kaam karte hain?)"
+)
+
+ONBOARD_ASK_DISTRICT = (
+    "Thank you. Which *district* do you work in?\n"
+    "(Aap kis zile mein kaam karte hain?)"
+)
+
+ONBOARD_ASK_CADRE = (
+    "And what is your *role / cadre*? Reply with the number:\n"
+    "(Aapka role kya hai? Neeche se number bhejein:)\n\n"
+    + cadre_menu()
+)
+
+ONBOARD_INVALID_CADRE = (
+    "Please reply with a number from 1 to {n} for your role.\n"
+    "(Kripya apne role ke liye 1 se {n} ke beech ka number bhejein.)\n\n"
+    + cadre_menu()
+).format(n=len(CADRES))
+
+
+def profile_confirm(cadre_name: str, district: str, state: str) -> str:
+    return (
+        "Thanks! I've saved your profile:\n"
+        f"* Role: {cadre_name}\n"
+        f"* District: {district}\n"
+        f"* State: {state}\n\n"
+        "Now ask me anything about Sickle Cell Disease and I'll answer for your role. "
+        "Type /help for topics, or /profile to change these details."
+    )
 
 
 FALLBACK = {

@@ -11,20 +11,24 @@ generation (RAG). Every grounded answer cites the source document.
 ```
 WhatsApp ──▶ Meta webhook ──▶ FastAPI (app/main.py)
                                   │
-                          message_router  ──▶ greetings / /help / /stop
+                          message_router
+                                  ├─ new user ▶ onboarding: State ▶ District ▶ Cadre
+                                  ├─ greetings / /help / /stop / /profile
                                   │
-                              qa_handler
+                              qa_handler  (profile-aware)
                                   ├─ scope gate (gpt-4o-mini)        ── off-topic ▶ fallback (no source)
-                                  ├─ multi-query expansion (gpt-4o-mini)
-                                  ├─ embed (text-embedding-3-small) ▶ FAISS top-k
-                                  └─ answer (gpt-4o-mini)  ──▶ reply + source citation
+                                  ├─ multi-query expansion (+ cadre)
+                                  ├─ embed (text-embedding-3-small) ▶ FAISS top-k ▶ cadre re-rank
+                                  └─ answer (gpt-4o-mini, profile injected)  ──▶ reply + source citation
                                   │
                               meta_client ──▶ WhatsApp reply
 ```
 
-- **No quiz feature** — the bot only answers questions via RAG.
+- **User profile** — on first contact the bot captures **State, District, and Cadre** (ASHA, ANM, MPW, CHO, Staff Nurse, Lab Technician, Medical Officer, Counsellor); `/profile` re-runs it.
+- **Cadre-aware retrieval** — every chunk is tagged with the cadre(s) it applies to; retrieval mildly boosts the user's cadre + general content, and answers are framed for that cadre's roles and facility level (grounded in the Roles & Responsibilities matrix + cadre manuals).
 - **Source citation** — grounded answers append the real document title(s) used; off-topic/conversational replies do not.
 - **Scope safety** — an independent classifier gates out-of-topic questions before answering.
+- **No quiz feature** — the bot only answers questions via RAG.
 
 ## Project layout
 
@@ -47,8 +51,9 @@ cp .env.example .env          # then fill in OPENAI_API_KEY and Meta credentials
 python scripts/chat.py        # interactive local test (uses the committed index)
 ```
 
-To rebuild the index from source PDFs (requires the PDFs in `data/training_materials/`
-and Tesseract installed for OCR):
+To rebuild the index from source files (PDF/DOCX/PPTX in `data/training_materials/`;
+Tesseract installed for OCR of image-based PDF pages; PPTX SmartArt and per-cadre
+tagging handled automatically):
 
 ```bash
 python scripts/ingest.py
