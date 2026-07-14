@@ -1,7 +1,8 @@
-# Replace YOUR_SUBDOMAIN.duckdns.org with your actual DuckDNS hostname.
-# Caddy automatically obtains and renews a Let's Encrypt certificate for it,
-# as long as ports 80 and 443 are open and the hostname points to this VM.
-YOUR_SUBDOMAIN.duckdns.org {
+# Use an <ip-with-dashes>.sslip.io hostname — it maps directly to the VM's public IP,
+# needs no DNS account/token, and is reliable for Let's Encrypt validation.
+# Example: VM IP 34.100.254.11  ->  34-100-254-11.sslip.io
+# Caddy auto-obtains and renews the TLS cert, as long as ports 80 and 443 are open.
+YOUR-IP-WITH-DASHES.sslip.io {
     encode gzip
     reverse_proxy 127.0.0.1:8000
 }

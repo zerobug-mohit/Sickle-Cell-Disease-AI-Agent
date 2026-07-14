@@ -30,12 +30,19 @@ Then reserve a **static IP** so it never changes:
 
 ---
 
-## Phase 2 — Free HTTPS hostname (DuckDNS)
+## Phase 2 — Free HTTPS hostname (sslip.io)
 
-1. Go to **duckdns.org**, sign in (Google/GitHub).
-2. Create a subdomain, e.g. `scd-bot` → gives `scd-bot.duckdns.org` (= `SUBDOMAIN`).
-3. Set its **current IP** to your `VM_IP` and **update**.
-4. Verify from your laptop: `nslookup SUBDOMAIN` should resolve to `VM_IP`.
+No account or token needed: **sslip.io** maps any IP directly to a hostname, and its
+DNS is reliable for Let's Encrypt validation. Just build the hostname from your `VM_IP`
+by replacing dots with dashes:
+
+- `VM_IP` `34.100.254.11`  →  `SUBDOMAIN` = **`34-100-254-11.sslip.io`**
+
+Verify from your laptop: `nslookup 34-100-254-11.sslip.io` should return your `VM_IP`.
+
+> Avoid DuckDNS here — its nameservers intermittently time out during Let's Encrypt's
+> multi-point DNS validation, which makes certificate issuance fail. sslip.io does not
+> have this problem.
 
 ---
 
@@ -137,18 +144,22 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --d
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update && sudo apt install -y caddy
 
-# Configure: point Caddy at our app, with auto-HTTPS for the DuckDNS host
-sudo sed -i 's/YOUR_SUBDOMAIN.duckdns.org/SUBDOMAIN/' /opt/scd-bot/deploy/Caddyfile
-sudo cp /opt/scd-bot/deploy/Caddyfile /etc/caddy/Caddyfile
+# Configure: point Caddy at our app, with auto-HTTPS for the sslip.io host.
+# Replace SUBDOMAIN with your hostname, e.g. 34-100-254-11.sslip.io
+echo 'SUBDOMAIN {
+    encode gzip
+    reverse_proxy 127.0.0.1:8000
+}' | sudo tee /etc/caddy/Caddyfile
 sudo systemctl restart caddy
 sudo systemctl status caddy --no-pager
 ```
 
-Caddy will fetch a Let's Encrypt cert within a few seconds. Verify from your laptop:
+Caddy fetches a Let's Encrypt cert within ~30–60s. Verify from your laptop:
 ```bash
 curl -s "https://SUBDOMAIN/webhook?hub.mode=subscribe&hub.verify_token=YOUR_VERIFY_TOKEN&hub.challenge=OK123"
 # -> should print: OK123
 ```
+If the cert doesn't issue, check `sudo journalctl -u caddy | tail -20` (port 80 must be open to the internet for the ACME challenge — the GCP HTTP/HTTPS firewall rules cover this).
 
 ---
 
