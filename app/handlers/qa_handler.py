@@ -95,7 +95,10 @@ User message: {query}"""
 
 
 async def _classify_scope(text: str, history: list[dict]) -> bool:
-    """Independent gate: is the user's message within SCD scope? Fails open (True)."""
+    """Independent gate: is the user's message within SCD scope? Fails open (True).
+
+    (Language is decided separately by the deterministic, script-based heuristic —
+    the LLM is unreliable at the Hindi-vs-Hinglish distinction.)"""
     prompt = _SCOPE_CLASSIFIER_PROMPT.format(
         query=text,
         history_block=_history_block(history),
@@ -111,7 +114,6 @@ async def _classify_scope(text: str, history: list[dict]) -> bool:
         parsed = json.loads(resp.choices[0].message.content)
         return bool(parsed.get("in_scope", True))
     except Exception:
-        # On any failure, prefer to answer rather than wrongly block a real question.
         return True
 
 
@@ -272,24 +274,25 @@ async def build_welcome(session: dict) -> str:
 async def handle_qa(phone: str, text: str, session: dict, username: str = "") -> str:
     t0 = time.monotonic()
     interaction_id = uuid.uuid4().hex[:8]
-    # One language governs the whole reply — answer, follow-ups, source label, and
-    # the footer added by the router — chosen deterministically with continuity.
-    lang = _resolve_lang(text, session.get("lang", ""))
-    session["lang"] = lang
     error_msg = ""
 
     history: list[dict] = session.get("history", [])
     recent_history = history[-(_HISTORY_TURNS * 2):]
     cadre = session.get("cadre", "")
 
-    # Independent scope gate runs concurrently with query expansion so the common
-    # (in-scope) path pays no extra latency. This is the authoritative off-topic
-    # check: it judges the real user question, before query-expansion can launder
-    # an unrelated question into SCD-shaped search queries.
+    # Scope gate runs concurrently with query expansion, so the common path pays no
+    # extra latency. It judges the real user message before query-expansion can
+    # launder an off-topic question into SCD-shaped search queries.
     in_scope_pre, queries = await asyncio.gather(
         _classify_scope(text, recent_history),
         _generate_search_queries(text, recent_history, _cadre_block(session)),
     )
+
+    # One language governs the whole reply — answer, follow-ups, source label, and
+    # the footer added by the router. Decided deterministically (script-based, with
+    # Hinglish continuity), which is more reliable than the LLM for Hindi vs Hinglish.
+    lang = _resolve_lang(text, session.get("lang", ""))
+    session["lang"] = lang
 
     if not in_scope_pre:
         session["lang"] = lang

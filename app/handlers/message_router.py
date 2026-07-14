@@ -5,7 +5,6 @@ from app.rag.prompts import (
     ONBOARD_ASK_STATE, ONBOARD_ASK_DISTRICT, ONBOARD_ASK_CADRE,
     ONBOARD_INVALID_CADRE, parse_cadre,
 )
-from app.utils.language import detect_language
 
 _MENU_TRIGGERS = {"/help", "/menu"}
 _STOP_TRIGGERS = {"/stop"}
