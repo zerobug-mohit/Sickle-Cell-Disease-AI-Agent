@@ -1,9 +1,9 @@
 from app.session.store import get_session, save_session, clear_session
-from app.handlers import menu_handler, qa_handler
+from app.handlers import qa_handler
 from app.rag.prompts import (
-    EXIT_FOOTER, GOODBYE, GREETING_PREFIX, MENU,
+    EXIT_FOOTER, GOODBYE,
     ONBOARD_ASK_STATE, ONBOARD_ASK_DISTRICT, ONBOARD_ASK_CADRE,
-    ONBOARD_INVALID_CADRE, profile_confirm, parse_cadre,
+    ONBOARD_INVALID_CADRE, parse_cadre,
 )
 from app.utils.language import detect_language
 
@@ -20,6 +20,9 @@ _GREETING_TRIGGERS = {
     "salam", "salaam", "hii", "heya",
 }
 
+# Profile fields cleared when (re)starting onboarding — includes the cached welcome.
+_PROFILE_KEYS = ("state", "district", "cadre", "cadre_name", "facility", "welcome")
+
 
 def _with_footer(reply: str, lang: str) -> str:
     return reply + "\n\n" + EXIT_FOOTER.get(lang, EXIT_FOOTER["en"])
@@ -31,11 +34,8 @@ def _profile_complete(session: dict) -> bool:
 
 def _start_onboarding(phone: str, session: dict) -> str:
     session["awaiting"] = "state"
-    session.pop("state", None)
-    session.pop("district", None)
-    session.pop("cadre", None)
-    session.pop("cadre_name", None)
-    session.pop("facility", None)
+    for k in _PROFILE_KEYS:
+        session.pop(k, None)
     save_session(phone, session)
     return ONBOARD_ASK_STATE
 
@@ -64,10 +64,10 @@ async def _handle_onboarding(phone: str, text: str, session: dict) -> str:
         session["cadre_name"] = cadre["name"]
         session["facility"] = cadre["facility"]
         session.pop("awaiting", None)
+        # Cadre-tailored single-message welcome (generated once, cached in session).
+        welcome = await qa_handler.build_welcome(session)
         save_session(phone, session)
-        lang = session.get("lang", "en")
-        confirm = profile_confirm(cadre["name"], session.get("district", ""), session.get("state", ""))
-        return confirm + "\n\n" + MENU.get(lang, MENU["en"])
+        return welcome
 
     # No awaiting set yet -> first contact: greet and ask for the first field.
     return _start_onboarding(phone, session)
@@ -90,15 +90,11 @@ async def route_message(phone: str, text: str, username: str = "") -> str:
     if not _profile_complete(session):
         return await _handle_onboarding(phone, text, session)
 
-    if normalized in _GREETING_TRIGGERS:
-        lang = detect_language(text)
-        session["lang"] = lang
+    # Greetings and /help both show the cadre-tailored welcome (cached).
+    if normalized in _GREETING_TRIGGERS or normalized in _MENU_TRIGGERS:
+        welcome = await qa_handler.build_welcome(session)
         save_session(phone, session)
-        prefix = GREETING_PREFIX.get(lang, GREETING_PREFIX["en"])
-        return prefix + "\n\n" + MENU.get(lang, MENU["en"])
-
-    if normalized in _MENU_TRIGGERS:
-        return await menu_handler.handle_menu(session)
+        return welcome
 
     reply = await qa_handler.handle_qa(phone, text, session, username=username)
     return _with_footer(reply, session.get("lang", "en"))

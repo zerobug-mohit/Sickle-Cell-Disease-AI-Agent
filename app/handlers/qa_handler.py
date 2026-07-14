@@ -8,7 +8,10 @@ from openai import AsyncOpenAI
 
 from app import config
 from app.rag.vector_store import vector_store, SearchResult
-from app.rag.prompts import QA_SYSTEM_PROMPT, FALLBACK, SOURCE_TITLES, SOURCE_LABEL, FOLLOWUP_LABEL
+from app.rag.prompts import (
+    QA_SYSTEM_PROMPT, FALLBACK, SOURCE_TITLES, SOURCE_LABEL, FOLLOWUP_LABEL,
+    WELCOME_PROMPT, profile_confirm,
+)
 from app.utils.language import detect_language
 from app.session.store import save_session
 from app.utils.sheets_logger import log_interaction
@@ -235,6 +238,35 @@ def _cadre_block(session: dict) -> str:
         f"- The user asking is a {cadre}. Include at least one query about this cadre's "
         f"specific roles and responsibilities for the topic.\n"
     )
+
+
+async def build_welcome(session: dict) -> str:
+    """Cadre-tailored, single-message welcome shown after onboarding and on /help.
+    Generated once per profile and cached in the session so /help reuses it."""
+    if session.get("welcome"):
+        return session["welcome"]
+    cadre = session.get("cadre_name") or session.get("cadre") or "health worker"
+    prompt = WELCOME_PROMPT.format(
+        cadre=cadre,
+        facility=session.get("facility", ""),
+        district=session.get("district", ""),
+        state=session.get("state", ""),
+    )
+    text = ""
+    try:
+        resp = await _client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=500,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = _clean_text(resp.choices[0].message.content or "")
+    except Exception:
+        text = ""
+    if not text:  # fallback if the model call fails
+        text = profile_confirm(cadre, session.get("district", ""), session.get("state", ""))
+    session["welcome"] = text
+    return text
 
 
 async def handle_qa(phone: str, text: str, session: dict, username: str = "") -> str:

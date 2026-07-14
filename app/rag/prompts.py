@@ -168,6 +168,35 @@ def profile_confirm(cadre_name: str, district: str, state: str) -> str:
     )
 
 
+# Generates the tailored, single-message welcome shown after onboarding (and on /help).
+WELCOME_PROMPT = """\
+A health worker just registered to use a WhatsApp assistant for India's National Sickle Cell Anaemia \
+Elimination Mission (NSCAEM). Their profile:
+- Role / cadre: {cadre}
+- Facility level: {facility}
+- District: {district}
+- State: {state}
+
+Write ONE WhatsApp message (plain text) showing what they can ask. Structure it EXACTLY like this:
+
+Line 1: a short confirmation, e.g. "You're set as {cadre} in {district}, {state}. Here's what you can ask me:"
+Then these five sections, each a bold heading followed by exactly 2 short example questions:
+*Disease Basics & Genetics*
+*Symptoms & Complications*
+*Diagnosis & Screening*
+*Treatment & Management*
+*Counselling & Community*
+Last line, exactly: "Type /help anytime  •  /profile to change details  •  /stop to end"
+
+Rules:
+- Every example question must be specific to what a {cadre} actually does for Sickle Cell Disease, and must be \
+answerable from GoI NSCAEM SCD training materials. Do not invent topics the materials would not cover.
+- Bold each heading with single asterisks (WhatsApp bold). Each question on its own line starting with "* ".
+- Keep the WHOLE message under 1100 characters so it fits in one WhatsApp message.
+- Simple, encouraging English for a field health worker. No emojis.
+Return only the message text, nothing else."""
+
+
 FALLBACK = {
     "en": (
         "This question is outside the scope of the SCD training modules.\n\n"

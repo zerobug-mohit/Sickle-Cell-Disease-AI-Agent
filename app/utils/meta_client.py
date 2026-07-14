@@ -5,7 +5,9 @@ from app.config import META_ACCESS_TOKEN, META_PHONE_NUMBER_ID, WHATSAPP_API_VER
 logger = logging.getLogger(__name__)
 
 _BASE_URL = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}"
-_MAX_CHUNK = 1500
+# WhatsApp's text body hard limit is 4096 chars; stay just under so normal replies
+# (and the onboarding welcome) send as a single message and only truly long text splits.
+_MAX_CHUNK = 3900
 
 
 def _split_text(text: str) -> list[str]:
